@@ -3,7 +3,7 @@ import {useNavigate,useParams} from 'react-router-dom'
 import {supabase} from '../lib/supabase'
 import {useAuth} from '../contexts/AuthContext'
 import {useRealtimeTable} from '../hooks/useRealtimeTable'
-import {insertRow,updateRow,nextId,ensureSlip} from '../services/api'
+import {insertRow,updateRow,createOrderAtomic} from '../services/api'
 import {formatDate,formatDateTime,formatTime,money,num} from '../utils/format'
 import PageTitle from '../components/PageTitle'
 import SearchFilterBar from '../components/SearchFilterBar'
@@ -23,7 +23,52 @@ function FollowupModal({lead,onClose,onSaved}){const [note,setNote]=useState('')
 
 function ConfirmModal({lead,onClose,onSaved}){const [rate,setRate]=useState(lead.latest_quote||lead.confirmed_rate||''),[date,setDate]=useState(lead.preferred_date||''),[time,setTime]=useState(lead.preferred_time||''),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');const save=async()=>{if(num(rate)<=0)return setError('Final confirmed rate is required.');setBusy(true);try{await updateRow('leads',lead.id,{confirmed_rate:num(rate),preferred_date:date||lead.preferred_date,preferred_time:time||lead.preferred_time,status:'Confirmed'});await insertRow('lead_events',{lead_id:lead.id,event_type:'Confirmed',note:`Customer confirmed · ${money(rate)}`,metadata:{rate:num(rate),date,time,note}});onSaved?.();onClose()}catch(e){setError(e.message)}finally{setBusy(false)}};return <Modal open title="Confirm Customer" onClose={onClose} footer={<><button className="outline" onClick={onClose}>Cancel</button><button className="primary" onClick={save} disabled={busy}>{busy?'Confirming…':'✓ Confirm Customer'}</button></>}><div className="form-grid cols-2"><label className="field"><span>Final Confirmed Rate *</span><input type="number" value={rate} onChange={e=>setRate(e.target.value)}/></label><div></div><label className="field"><span>Pickup Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label className="field"><span>Pickup Time</span><input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label><label className="field span-2"><span>Confirmation Note</span><textarea rows="3" value={note} onChange={e=>setNote(e.target.value)}/></label><div className="confirmation-preview span-2"><div><small>Customer</small><b>{lead.name}</b></div><div><small>Route</small><b>{lead.pickup} → {lead.drop}</b></div><div><small>Vehicle</small><b>{lead.vehicle_type||'Not Decided'}</b></div><div><small>Final Rate</small><b>{money(rate)}</b></div></div></div>{error&&<div className="form-error">{error}</div>}</Modal>}
 
-function ConvertModal({lead,onClose,onSaved}){const nav=useNavigate(),[busy,setBusy]=useState(false),[error,setError]=useState('');const create=async()=>{setBusy(true);try{const id=await nextId('order');const row=await insertRow('orders',{id,source:'Lead',source_lead_id:lead.id,date:lead.preferred_date||null,time:lead.preferred_time||null,customer_id:lead.customer_id||null,customer:lead.name,phone:lead.phone,pickup:lead.pickup,drop:lead.drop,goods:lead.goods,vehicle_type_id:lead.vehicle_type_id||null,vehicle_type:lead.vehicle_type||null,distance:lead.distance==null?null:Number(lead.distance),loading:lead.loading==null?0:Number(lead.loading),unloading:lead.unloading==null?0:Number(lead.unloading),status:'New',payment:'Pending',customer_rate:num(lead.confirmed_rate||lead.latest_quote),vehicle_cost:0,labour_cost:0,notes:lead.notes||null,timeline:[],contact:[]});await insertRow('order_events',{order_id:id,stage:'New',event_type:'Created',note:`Converted from ${lead.id}`});await updateRow('leads',lead.id,{status:'Converted',converted_order_id:id});await insertRow('lead_events',{lead_id:lead.id,event_type:'Converted',note:`Converted to Order · ${id}`,metadata:{order_id:id}});await ensureSlip('ORDER',row,{source:'Lead Conversion'});onSaved?.();onClose();nav(`/orders/${id}`)}catch(e){setError(e.message)}finally{setBusy(false)}};return <Modal open title="Convert to Order" onClose={onClose} footer={<><button className="outline" onClick={onClose}>Cancel</button><button className="primary" onClick={create} disabled={busy}>{busy?'Creating…':'Create Order'}</button></>}><div className="convert-review"><div><small>Customer</small><b>{lead.name}</b></div><div><small>Route</small><b>{lead.pickup} → {lead.drop}</b></div><div><small>Goods</small><b>{lead.goods||'—'}</b></div><div><small>Vehicle Required</small><b>{lead.vehicle_type||'Not Decided'}</b></div><div><small>Labour</small><b>Load {lead.loading||0} · Unload {lead.unloading||0}</b></div><div><small>Final Rate</small><b>{money(lead.confirmed_rate||lead.latest_quote)}</b></div><div><small>Pickup</small><b>{formatDate(lead.preferred_date)} · {formatTime(lead.preferred_time)}</b></div></div>{error&&<div className="form-error">{error}</div>}</Modal>}
+function ConvertModal({lead,onClose,onSaved}){
+ const nav=useNavigate(),[busy,setBusy]=useState(false),[error,setError]=useState('')
+ const create=async()=>{
+  if(busy)return
+  setBusy(true);setError('')
+  try{
+   const row=await createOrderAtomic({
+    create_request_id:`LEAD-CONVERT-${lead.id}`,
+    source:'Lead',
+    source_lead_id:lead.id,
+    date:lead.preferred_date||null,
+    time:lead.preferred_time||null,
+    customer_id:lead.customer_id||null,
+    customer:lead.name,
+    phone:lead.phone,
+    pickup:lead.pickup,
+    drop:lead.drop,
+    goods:lead.goods||null,
+    vehicle_type_id:lead.vehicle_type_id||null,
+    vehicle_type:lead.vehicle_type||null,
+    distance:lead.distance==null?null:Number(lead.distance),
+    loading:lead.loading==null?0:Number(lead.loading),
+    unloading:lead.unloading==null?0:Number(lead.unloading),
+    payment:'Pending',
+    customer_rate:num(lead.confirmed_rate||lead.latest_quote),
+    estimated_vehicle_cost:0,
+    estimated_labour_cost:0,
+    notes:lead.notes||null
+   })
+   onSaved?.();onClose();nav(`/orders/${row.id}`)
+  }catch(e){setError(e.message||'Lead could not be converted.')}
+  finally{setBusy(false)}
+ }
+ return <Modal open title="Convert to Order" onClose={onClose} footer={<><button className="outline" onClick={onClose}>Cancel</button><button className="primary" onClick={create} disabled={busy}>{busy?'Creating…':'Create Order'}</button></>}>
+  <div className="convert-review">
+   <div><small>Customer</small><b>{lead.name}</b></div>
+   <div><small>Route</small><b>{lead.pickup} → {lead.drop}</b></div>
+   <div><small>Goods</small><b>{lead.goods||'—'}</b></div>
+   <div><small>Vehicle Required</small><b>{lead.vehicle_type||'Not Decided'}</b></div>
+   <div><small>Labour</small><b>Load {lead.loading||0} · Unload {lead.unloading||0}</b></div>
+   <div><small>Final Rate</small><b>{money(lead.confirmed_rate||lead.latest_quote)}</b></div>
+   <div><small>Pickup</small><b>{formatDate(lead.preferred_date)} · {formatTime(lead.preferred_time)}</b></div>
+  </div>
+  {error&&<div className="form-error">{error}</div>}
+ </Modal>
+}
 
 export default function Leads(){const {id}=useParams(),nav=useNavigate(),{profile}=useAuth(),{rows,reload}=useRealtimeTable('leads',{filters:[['archived','eq',false]]}),{rows:vehicleTypes}=useRealtimeTable('vehicle_types',{order:'sort_order',ascending:true,filters:[['archived','eq',false]]});const [search,setSearch]=useState(''),[status,setStatus]=useState('All'),[sort,setSort]=useState('newest'),[view,setView]=useState('table'),[form,setForm]=useState(null);const filtered=useMemo(()=>{const q=search.toLowerCase();const a=rows.filter(l=>(status==='All'||l.status===status)&&(!q||[l.id,l.name,l.phone,l.pickup,l.drop,l.goods,l.vehicle_type,l.source].join(' ').toLowerCase().includes(q)));return a.sort((a,b)=>sort==='name'?String(a.name).localeCompare(String(b.name)):sort==='oldest'?String(a.created_at).localeCompare(String(b.created_at)):String(b.created_at).localeCompare(String(a.created_at)))},[rows,search,status,sort]);if(id)return <LeadDetail id={id} onBack={()=>nav('/leads')} reloadList={reload} vehicleTypes={vehicleTypes}/>;return <><PageTitle title="Leads & Enquiries" subtitle="Enquiry, quote, follow-up, confirmation and conversion" actions={<button className="primary" onClick={()=>setForm({})}>＋ Add Lead</button>}/><div className="status-tabs">{leadStatuses.map(s=><button key={s} className={status===s?'active':''} onClick={()=>setStatus(s)}>{s}<span>{s==='All'?rows.length:rows.filter(x=>x.status===s).length}</span></button>)}</div><SearchFilterBar search={search} onSearch={setSearch} view={view} onView={setView} placeholder="Search lead, customer, phone, route…"><select value={sort} onChange={e=>setSort(e.target.value)}><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="name">Name A–Z</option></select></SearchFilterBar>{view==='table'?<div className="panel"><DataTable rows={filtered} onRow={r=>nav(`/leads/${r.id}`)} columns={[{key:'sn',label:'SN',render:(_r,i)=>i+1},{key:'id',label:'Lead',render:r=><b className="link">{r.id}</b>},{key:'name',label:'Customer',render:r=><><b>{r.name}</b><small>{r.phone}</small></>},{key:'route',label:'Route',render:r=><><b>{r.pickup} → {r.drop}</b><small>{r.goods||''}</small></>},{key:'vehicle_type',label:'Vehicle'},{key:'source',label:'Source'},{key:'status',label:'Status',render:r=><StatusBadge status={r.status}/>},{key:'created_at',label:'Created',render:r=>formatDateTime(r.created_at)}]}/></div>:<div className="card-grid">{filtered.map(l=><article className="list-card" key={l.id} onClick={()=>nav(`/leads/${l.id}`)}><div className="list-card-head"><b>{l.id}</b><StatusBadge status={l.status}/></div><h3>{l.name}</h3><span>{l.phone}</span><div className="route-card">{l.pickup} → {l.drop}</div><div className="card-meta"><span>{l.vehicle_type||'Vehicle TBD'}</span><span>{l.source||'Direct'}</span></div></article>)}</div>}<LeadForm open={!!form} item={form?.id?form:null} onClose={()=>setForm(null)} onSaved={reload} vehicleTypes={vehicleTypes}/></>}
 
