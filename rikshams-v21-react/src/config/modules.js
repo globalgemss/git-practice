@@ -4,6 +4,7 @@ export const adminNav=[
  ['new','＋','New Order','/orders/new',['Admin','Manager','Staff']],
  ['orders','▤','Orders','/orders',['Admin','Manager','Staff']],
  ['dispatch','➤','Dispatch','/dispatch',['Admin','Manager','Staff']],
+ ['jobs','◉','Jobs','/jobs',['Admin','Manager','Staff']],
  ['fleet','🚚','Fleet & Crew','/fleet',['Admin','Manager']],
  ['customers','●','Customers','/customers',['Admin','Manager','Staff']],
  ['slips','▣','Slips','/slips',['Admin','Manager','Staff']],
