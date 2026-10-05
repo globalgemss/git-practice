@@ -61,3 +61,19 @@ Set Root Directory to `rikshams-v21-react`, add the two Vite environment variabl
 
 ## Current verification status
 The project structure and migration logic are based directly on the uploaded V21 source. Live end-to-end testing still requires your Supabase URL/anon key and a Supabase project with the migrations applied.
+
+
+## Edge Function deployment
+Deploy the secure access function before creating Agent/Staff PIN accounts:
+
+```bash
+supabase functions deploy manage-access
+```
+
+Supabase automatically provides `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` to deployed Edge Functions. Never put the service-role key in the React frontend.
+
+The **User / Agent Access** screen then creates/updates the Supabase Auth user securely, stores the profile, generates the login token, and creates an Agent public form when the role is Agent.
+
+Agent login URL:
+`/agent-login/:loginToken`
+
