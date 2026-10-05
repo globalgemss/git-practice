@@ -16,7 +16,7 @@ export default function Locations(){
     {key:'zone',label:'Zone'},
     {key:'latitude',label:'Latitude',type:'number'},
     {key:'longitude',label:'Longitude',type:'number'},
-    {key:'active',label:'Status',type:'select',options:[{value:true,label:'Active'},{value:false,label:'Inactive'}]}
+    {key:'active',label:'Status',type:'boolean'}
    ]}
    columns={[
     {key:'name',label:'Location'},
@@ -26,7 +26,7 @@ export default function Locations(){
     {key:'longitude',label:'Longitude'},
     {key:'active',label:'Status',render:r=>r.active?'Active':'Inactive'}
    ]}
-   statusField="active"
+   statusField={null}
    defaultValues={{active:true}}
   />
  </>
