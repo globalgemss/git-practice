@@ -77,3 +77,29 @@ The **User / Agent Access** screen then creates/updates the Supabase Auth user s
 Agent login URL:
 `/agent-login/:loginToken`
 
+
+
+## Live production connection
+
+Supabase project: `RikshaMS`
+Project ref: `hgbxdurimxcofvgujwux`
+Region: `ap-south-1`
+
+The React client has a live publishable-key fallback and can also be overridden with:
+```env
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
+```
+
+Production database migrations currently applied:
+- rikshams_v21_schema
+- rikshams_v21_security
+- rikshams_v21_seed
+- rikshams_v21_security_hardening
+- rikshams_v21_realtime_audit_and_public_form
+
+Security status: Supabase database/RLS advisor is clean except the optional leaked-password-protection warning on the Free plan.
+
+Authentication:
+- Admin uses normal Supabase email/password login.
+- Agent/Staff access keeps the V21 4-digit PIN UI; the Edge Function maps it to a Supabase-compatible credential.
