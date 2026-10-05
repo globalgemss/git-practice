@@ -1,6 +1,6 @@
 import React,{useMemo,useState} from 'react'
 import {useRealtimeTable} from '../hooks/useRealtimeTable'
-import {createTransaction,ensureSlip,updateRow} from '../services/api'
+import {createTransaction,reverseTransaction} from '../services/api'
 import {supabase} from '../lib/supabase'
 import {useAuth} from '../contexts/AuthContext'
 import {formatDateTime,money,num,todayKathmandu} from '../utils/format'
@@ -14,8 +14,15 @@ export default function ReceivePay(){
  const {profile}=useAuth(),{rows,reload}=useRealtimeTable('transactions',{filters:[['archived','eq',false]]}),{rows:orders}=useRealtimeTable('orders',{filters:[['archived','eq',false]]})
  const [tab,setTab]=useState('Receive'),[search,setSearch]=useState(''),[method,setMethod]=useState('All'),[modal,setModal]=useState(false),[view,setView]=useState('table'),[error,setError]=useState('')
  const direction=tab==='Receive'?'IN':'OUT',filtered=useMemo(()=>{const q=search.toLowerCase();return rows.filter(t=>t.direction===direction&&(method==='All'||t.method===method)&&(!q||[t.id,t.order_id,t.party_name,t.reference,t.note].join(' ').toLowerCase().includes(q)))},[rows,tab,search,method])
- const recalcOrderPayment=async orderId=>{if(!orderId)return;const order=orders.find(o=>o.id===orderId);if(!order)return;const {data:all,error:e}=await supabase.from('transactions').select('amount,direction,status').eq('order_id',order.id);if(e)throw e;const received=(all||[]).filter(x=>x.direction==='IN'&&x.status!=='Reversed').reduce((s,x)=>s+num(x.amount),0);await supabase.from('orders').update({payment:received>=num(order.customer_rate)?'Paid':received>0?'Partial':'Pending'}).eq('id',order.id)}
- const reverse=async t=>{if(t.status==='Reversed'||t.reversal_of||t.reversed_by)return;if(!confirm(`Reverse ${t.id} · ${money(t.amount)}?\nThe original record will stay in history.`))return;setError('');try{const rev=await createTransaction({order_id:t.order_id,party_type:t.party_type,party_id:t.party_id,party_name:t.party_name,type:`Reversal · ${t.type||'Transaction'}`,direction:t.direction==='IN'?'OUT':'IN',amount:t.amount,method:t.method,reference:t.reference,note:`Reversal of ${t.id}${t.note?` · ${t.note}`:''}`,reversal_of:t.id,created_by:profile?.id||null});await updateRow('transactions',t.id,{status:'Reversed',reversed_by:rev.id});await supabase.from('slips').update({status:'Reversed'}).eq('transaction_id',t.id);await recalcOrderPayment(t.order_id);reload()}catch(e){setError(e.message)}}
+ const reverse=async t=>{
+  if(t.status==='Reversed'||t.reversal_of||t.reversed_by)return
+  if(!confirm(`Reverse ${t.id} · ${money(t.amount)}?\nThe original record will stay in history.`))return
+  setError('')
+  try{
+   await reverseTransaction(t.id,`Reversal of ${t.id}`)
+   reload()
+  }catch(e){setError(e.message||'Transaction could not be reversed.')}
+ }
  return <>
   <PageTitle title="Receive & Pay" subtitle="Customer receipts and partner/driver/labour payments" actions={<button className="primary" onClick={()=>setModal(true)}>＋ {tab}</button>}/>
   <div className="master-tabs"><button className={tab==='Receive'?'active':''} onClick={()=>setTab('Receive')}>Receive</button><button className={tab==='Pay'?'active':''} onClick={()=>setTab('Pay')}>Pay</button></div>
@@ -26,4 +33,39 @@ export default function ReceivePay(){
   {modal&&<TransactionModal mode={tab} orders={orders} profile={profile} onClose={()=>setModal(false)} onSaved={()=>{setModal(false);reload()}}/>}
  </>
 }
-function TransactionModal({mode,orders,profile,onClose,onSaved}){const direction=mode==='Receive'?'IN':'OUT',[f,setF]=useState({order_id:'',party_type:mode==='Receive'?'Customer':'Partner',party_id:'',party_name:'',type:mode==='Receive'?'Customer Payment':'Partner Payment',amount:'',method:'Cash',reference:'',note:'',date:todayKathmandu()}),[busy,setBusy]=useState(false),[error,setError]=useState('');const save=async()=>{if(num(f.amount)<=0)return setError('Amount required.');setBusy(true);try{const order=orders.find(o=>o.id===f.order_id);const txn=await createTransaction({...f,direction,created_by:profile?.id||null,party_name:f.party_name||(f.party_type==='Customer'?order?.customer:'')});if(mode==='Receive'&&order){await ensureSlip('RECEIPT',order,{transactionId:txn.id,amount:f.amount,paymentMethod:f.method,source:'Customer Payment',snapshot:{transactionId:txn.id,totalBill:num(order.customer_rate),thisPayment:num(f.amount)}});const {data:all}=await supabase.from('transactions').select('amount').eq('order_id',order.id).eq('direction','IN').neq('status','Reversed');const received=(all||[]).reduce((s,x)=>s+num(x.amount),0);await supabase.from('orders').update({payment:received>=num(order.customer_rate)?'Paid':received>0?'Partial':'Pending'}).eq('id',order.id)}onSaved()}catch(e){setError(e.message)}finally{setBusy(false)}};return <Modal open title={`${mode} Transaction`} onClose={onClose} size="lg" footer={<><button className="outline" onClick={onClose}>Cancel</button><button className="primary" disabled={busy} onClick={save}>{busy?'Saving…':`Save ${mode}`}</button></>}><div className="form-grid cols-2"><label className="field"><span>Order</span><select value={f.order_id} onChange={e=>{const o=orders.find(x=>x.id===e.target.value);setF(x=>({...x,order_id:e.target.value,party_name:x.party_type==='Customer'?(o?.customer||''):x.party_name}))}}><option value="">No order / general</option>{orders.map(o=><option key={o.id} value={o.id}>{o.id} · {o.customer}</option>)}</select></label><label className="field"><span>Party Type</span><select value={f.party_type} onChange={e=>setF(x=>({...x,party_type:e.target.value}))}>{(mode==='Receive'?['Customer','Other']:['Partner','Vehicle Owner','Driver','Labour','Expense','Other']).map(x=><option key={x}>{x}</option>)}</select></label><label className="field"><span>Party Name</span><input value={f.party_name} onChange={e=>setF(x=>({...x,party_name:e.target.value}))}/></label><label className="field"><span>Type</span><select value={f.type} onChange={e=>setF(x=>({...x,type:e.target.value}))}>{(mode==='Receive'?['Customer Payment','Advance','Final Payment','Partial Payment']:['Partner Payment','Driver Payment','Labour Payment','Expense','Refund']).map(x=><option key={x}>{x}</option>)}</select></label><label className="field"><span>Amount *</span><input type="number" min="0" value={f.amount} onChange={e=>setF(x=>({...x,amount:e.target.value}))}/></label><label className="field"><span>Payment Method</span><select value={f.method} onChange={e=>setF(x=>({...x,method:e.target.value}))}>{['Cash','Bank','eSewa','Khalti','Credit','Other'].map(x=><option key={x}>{x}</option>)}</select></label><label className="field"><span>Reference</span><input value={f.reference} onChange={e=>setF(x=>({...x,reference:e.target.value}))}/></label><label className="field"><span>Date</span><input type="date" value={f.date} onChange={e=>setF(x=>({...x,date:e.target.value}))}/></label><label className="field span-2"><span>Note</span><textarea rows="3" value={f.note} onChange={e=>setF(x=>({...x,note:e.target.value}))}/></label></div>{error&&<div className="form-error">{error}</div>}</Modal>}
+function TransactionModal({mode,orders,profile,onClose,onSaved}){
+ const direction=mode==='Receive'?'IN':'OUT'
+ const [f,setF]=useState({order_id:'',party_type:mode==='Receive'?'Customer':'Partner',party_id:'',party_name:'',type:mode==='Receive'?'Customer Payment':'Partner Payment',amount:'',method:'Cash',reference:'',note:'',date:todayKathmandu()})
+ const [busy,setBusy]=useState(false),[error,setError]=useState('')
+ const save=async()=>{
+  if(busy)return
+  if(num(f.amount)<=0)return setError('Amount required.')
+  setBusy(true);setError('')
+  try{
+   const order=orders.find(o=>o.id===f.order_id)
+   await createTransaction({
+    ...f,
+    direction,
+    action_id:crypto.randomUUID(),
+    party_name:f.party_name||(f.party_type==='Customer'?order?.customer:''),
+    created_by:profile?.id||null
+   })
+   onSaved()
+  }catch(e){setError(e.message||'Transaction could not be saved.')}
+  finally{setBusy(false)}
+ }
+ return <Modal open title={`${mode} Transaction`} onClose={onClose} size="lg" footer={<><button className="outline" onClick={onClose}>Cancel</button><button className="primary" disabled={busy} onClick={save}>{busy?'Saving…':`Save ${mode}`}</button></>}>
+  <div className="form-grid cols-2">
+   <label className="field"><span>Order</span><select value={f.order_id} onChange={e=>{const o=orders.find(x=>x.id===e.target.value);setF(x=>({...x,order_id:e.target.value,party_name:x.party_type==='Customer'?(o?.customer||''):x.party_name}))}}><option value="">No order / general</option>{orders.map(o=><option key={o.id} value={o.id}>{o.id} · {o.customer}</option>)}</select></label>
+   <label className="field"><span>Party Type</span><select value={f.party_type} onChange={e=>setF(x=>({...x,party_type:e.target.value}))}>{(mode==='Receive'?['Customer','Other']:['Partner','Vehicle Owner','Driver','Labour','Expense','Other']).map(x=><option key={x}>{x}</option>)}</select></label>
+   <label className="field"><span>Party Name</span><input value={f.party_name} onChange={e=>setF(x=>({...x,party_name:e.target.value}))}/></label>
+   <label className="field"><span>Type</span><select value={f.type} onChange={e=>setF(x=>({...x,type:e.target.value}))}>{(mode==='Receive'?['Customer Payment','Advance','Final Payment','Partial Payment']:['Partner Payment','Driver Payment','Labour Payment','Expense','Refund']).map(x=><option key={x}>{x}</option>)}</select></label>
+   <label className="field"><span>Amount *</span><input type="number" min="0" value={f.amount} onChange={e=>setF(x=>({...x,amount:e.target.value}))}/></label>
+   <label className="field"><span>Payment Method</span><select value={f.method} onChange={e=>setF(x=>({...x,method:e.target.value}))}>{['Cash','Bank','eSewa','Khalti','Credit','Other'].map(x=><option key={x}>{x}</option>)}</select></label>
+   <label className="field"><span>Reference</span><input value={f.reference} onChange={e=>setF(x=>({...x,reference:e.target.value}))}/></label>
+   <label className="field"><span>Date</span><input type="date" value={f.date} onChange={e=>setF(x=>({...x,date:e.target.value}))}/></label>
+   <label className="field span-2"><span>Note</span><textarea rows="3" value={f.note} onChange={e=>setF(x=>({...x,note:e.target.value}))}/></label>
+  </div>
+  {error&&<div className="form-error">{error}</div>}
+ </Modal>
+}
