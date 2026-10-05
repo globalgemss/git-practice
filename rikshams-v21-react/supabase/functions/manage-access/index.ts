@@ -125,6 +125,7 @@ Deno.serve(async (req: Request) => {
         token: loginToken,
         owner_type: "Agent",
         owner_profile_id: profile.id,
+        owner_display_name: displayName,
         title: "Transport Enquiry",
         active: true,
       }, { onConflict: "token" });
