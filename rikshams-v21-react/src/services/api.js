@@ -23,6 +23,39 @@ export async function archiveRow(table,id){
  return updateRow(table,id,{archived:true})
 }
 
+export async function addLeadQuote(leadId,amount,note=''){
+ const {data,error}=await supabase.rpc('add_lead_quote',{
+  p_lead_id:leadId,
+  p_amount:num(amount),
+  p_note:note||null
+ })
+ if(error)throw error
+ return data
+}
+
+export async function addLeadFollowup(leadId,note,channel=null,nextFollowupAt=null){
+ const {data,error}=await supabase.rpc('add_lead_followup',{
+  p_lead_id:leadId,
+  p_note:note,
+  p_channel:channel||null,
+  p_next_followup_at:nextFollowupAt||null
+ })
+ if(error)throw error
+ return data
+}
+
+export async function confirmLead(leadId,rate,preferredDate=null,preferredTime=null,note=''){
+ const {data,error}=await supabase.rpc('confirm_lead',{
+  p_lead_id:leadId,
+  p_rate:num(rate),
+  p_preferred_date:preferredDate||null,
+  p_preferred_time:preferredTime||null,
+  p_note:note||null
+ })
+ if(error)throw error
+ return data
+}
+
 export async function createOrderAtomic(input){
  const payload={
   ...input,
