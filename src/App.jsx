@@ -1,129 +1,104 @@
-import { NavLink, Route, Routes } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  Users,
-  ClipboardList,
-  Truck,
-  BriefcaseBusiness,
-  UserRound,
-  HardHat,
-  WalletCards,
-  BookOpen,
-  ReceiptText,
-  Settings,
-} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Navigate, NavLink, Route, Routes, useParams } from 'react-router-dom';
+import { supabase } from './lib/supabase';
+import './styles.css';
 
-const navItems = [
-  ['/', 'Dashboard', LayoutDashboard],
-  ['/leads', 'Leads', Users],
-  ['/orders', 'Orders', ClipboardList],
-  ['/dispatch', 'Dispatch', Truck],
-  ['/jobs', 'Jobs', BriefcaseBusiness],
-  ['/drivers', 'Drivers', UserRound],
-  ['/labour', 'Labour', HardHat],
-  ['/accounts', 'Receive & Pay', WalletCards],
-  ['/day-book', 'Day Book', BookOpen],
-  ['/slips', 'Slips', ReceiptText],
-  ['/settings', 'Settings', Settings],
-];
+const modules = {
+  leads:{title:'Leads',table:'leads',fields:[['full_name','Full Name'],['phone','Phone'],['source','Source'],['status','Status'],['follow_up_at','Follow-up','datetime-local']]},
+  customers:{title:'Customers',table:'customers',fields:[['customer_type','Type'],['name','Name'],['phone','Phone'],['alternate_phone','Alternate Phone'],['email','Email'],['address','Address']]},
+  vehicles:{title:'Vehicles',table:'vehicles',fields:[['registration_no','Registration No.'],['vehicle_type','Vehicle Type'],['capacity','Capacity'],['availability_status','Availability']]},
+  drivers:{title:'Drivers',table:'drivers',fields:[['name','Name'],['phone','Phone'],['alternate_phone','Alternate Phone'],['license_no','License No.'],['address','Address'],['status','Status']]},
+  labourers:{title:'Labour',table:'labourers',fields:[['name','Name'],['phone','Phone'],['alternate_phone','Alternate Phone'],['address','Address'],['status','Status']]},
+  locations:{title:'Locations',table:'locations',fields:[['name','Name'],['address','Address'],['status','Status']]},
+  notices:{title:'Notices',table:'notices',fields:[['title','Title'],['body','Notice Text'],['display_type','Display Type'],['background_color','Background Color','color'],['text_color','Text Color','color'],['priority','Priority','number'],['target_audience','Audience'],['target_module','Module'],['starts_at','Start','datetime-local'],['ends_at','End','datetime-local']]}
+};
 
-function Placeholder({ title }) {
-  return (
-    <section className="page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">RikshaMS</p>
-          <h1>{title}</h1>
-        </div>
-      </div>
-      <div className="empty-card">
-        <strong>{title}</strong>
-        <p>This module is scaffolded and will be connected to Supabase during migration.</p>
-      </div>
-    </section>
-  );
+const nextOrder={new:'quoted',quoted:'assigned',assigned:'in_transit',in_transit:'delivered',delivered:'completed'};
+const nextJob={assigned:'work_started',work_started:'in_progress',in_progress:'completed'};
+const fmt=v=>{if(!v)return'—';const d=new Date(v);return Number.isNaN(d.getTime())?'—':new Intl.DateTimeFormat('en-NP',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Kathmandu'}).format(d)};
+
+function Modal({title,onClose,children}){return <div className="modal-bg" onMouseDown={e=>e.target===e.currentTarget&&onClose()}><div className="modal"><div className="modal-head"><h2>{title}</h2><button onClick={onClose}>×</button></div>{children}</div></div>}
+
+function Login({onLogin}){
+  const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+  async function submit(e){e.preventDefault();setBusy(true);setError('');const {error}=await supabase.auth.signInWithPassword({email,password});if(error)setError(error.message);else onLogin();setBusy(false)}
+  return <div className="auth-page"><form className="auth-card" onSubmit={submit}><div className="logo">R</div><h1>RikshaMS</h1><p>Transport + Labour Management</p><label>Email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} required/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>{error&&<div className="error">{error}</div>}<button className="primary">{busy?'Signing in…':'Login'}</button></form></div>
 }
 
-function Dashboard() {
-  const cards = [
-    ['Total Leads', '—'],
-    ['Active Orders', '—'],
-    ['Dispatches', '—'],
-    ['Jobs', '—'],
-    ['Available Vehicles', '—'],
-    ['Receivables', '—'],
-    ['Payables', '—'],
-    ['Revenue', '—'],
-  ];
-
-  return (
-    <section className="page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Transport + Labour Management</p>
-          <h1>Dashboard</h1>
-        </div>
-        <span className="status-pill">React migration branch</span>
-      </div>
-      <div className="stats-grid">
-        {cards.map(([label, value]) => (
-          <article className="stat-card" key={label}>
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </article>
-        ))}
-      </div>
-      <div className="panel">
-        <h2>Migration status</h2>
-        <p>
-          The modern React shell is ready. Business modules will be migrated without replacing the approved RikshaMS workflow.
-        </p>
-      </div>
-    </section>
-  );
+function Crud({kind}){
+  const c=modules[kind];const [rows,setRows]=useState([]),[q,setQ]=useState(''),[open,setOpen]=useState(false),[edit,setEdit]=useState(null),[error,setError]=useState('');
+  async function load(){let x=supabase.from(c.table).select('*').order('created_at',{ascending:false});const {data,error}=await x;if(error)setError(error.message);setRows(data||[])}
+  useEffect(()=>{load()},[kind]);
+  const shown=useMemo(()=>rows.filter(r=>!q||JSON.stringify(r).toLowerCase().includes(q.toLowerCase())),[rows,q]);
+  async function save(e){e.preventDefault();const f=new FormData(e.currentTarget),p={};c.fields.forEach(([n,,t])=>{let v=f.get(n);if(v==='')v=null;if(t==='number'&&v!==null)v=Number(v);p[n]=v});let r=edit?await supabase.from(c.table).update(p).eq('id',edit.id):await supabase.from(c.table).insert(p);if(r.error){setError(r.error.message);return}setOpen(false);setEdit(null);load()}
+  async function archive(r){if(!confirm('Archive/inactivate this record?'))return;let res=await supabase.from(c.table).update({deleted_at:new Date().toISOString()}).eq('id',r.id);if(res.error)res=await supabase.from(c.table).update({status:'inactive'}).eq('id',r.id);if(res.error)setError(res.error.message);else load()}
+  return <Page title={c.title} action={<button className="primary" onClick={()=>{setEdit(null);setOpen(true)}}>＋ Add</button>}><div className="toolbar"><input placeholder="Search…" value={q} onChange={e=>setQ(e.target.value)}/></div>{error&&<div className="error">{error}</div>}<div className="table-wrap"><table><thead><tr><th>SN</th>{c.fields.slice(0,5).map(f=><th key={f[0]}>{f[1]}</th>)}<th>Created</th><th>Action</th></tr></thead><tbody>{shown.map((r,i)=><tr key={r.id}><td>{i+1}</td>{c.fields.slice(0,5).map(f=><td key={f[0]}>{String(r[f[0]]??'—')}</td>)}<td>{fmt(r.created_at)}</td><td><button className="link" onClick={()=>{setEdit(r);setOpen(true)}}>Edit</button><button className="link danger" onClick={()=>archive(r)}>Archive</button></td></tr>)}</tbody></table></div>{open&&<Modal title={edit?'Edit '+c.title:'Add '+c.title} onClose={()=>setOpen(false)}><form className="form-grid" onSubmit={save}>{c.fields.map(([n,l,t])=><label key={n}>{l}{n==='address'||n==='body'?<textarea name={n} defaultValue={edit?.[n]??''}/>:<input name={n} type={t||'text'} defaultValue={edit?.[n]??''}/>}</label>)}<div className="actions"><button type="button" onClick={()=>setOpen(false)}>Cancel</button><button className="primary">Save</button></div></form></Modal>}</Page>
 }
 
-export default function App() {
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">R</div>
-          <div>
-            <strong>RikshaMS</strong>
-            <small>Transport + Labour</small>
-          </div>
-        </div>
-        <nav>
-          {navItems.map(([to, label, Icon]) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
-            >
-              <Icon size={18} />
-              <span>{label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      </aside>
+function Page({title,action,children}){return <section className="page"><div className="page-head"><div><small>RikshaMS</small><h1>{title}</h1></div>{action}</div>{children}</section>}
 
-      <main className="main">
-        <header className="topbar">
-          <div>
-            <strong>RikshaMS</strong>
-            <span>Production migration workspace</span>
-          </div>
-        </header>
+function Dashboard(){
+ const [s,setS]=useState({});useEffect(()=>{(async()=>{const q=await Promise.all(['leads','orders','dispatches','jobs','vehicles','drivers','labourers'].map(t=>supabase.from(t).select('*',{count:'exact',head:true})));const {data:p}=await supabase.from('payments').select('amount,payment_type');const sum=t=>(p||[]).filter(x=>x.payment_type===t).reduce((a,b)=>a+Number(b.amount||0),0);setS({leads:q[0].count,orders:q[1].count,dispatches:q[2].count,jobs:q[3].count,vehicles:q[4].count,drivers:q[5].count,labour:q[6].count,receive:sum('receive'),pay:sum('pay'),expense:sum('expense')})})()},[]);
+ return <Page title="Dashboard"><div className="stats">{[['Leads',s.leads],['Orders',s.orders],['Dispatches',s.dispatches],['Jobs',s.jobs],['Vehicles',s.vehicles],['Drivers',s.drivers],['Labour',s.labour],['Received','NPR '+(s.receive||0).toLocaleString()],['Paid','NPR '+(s.pay||0).toLocaleString()],['Expenses','NPR '+(s.expense||0).toLocaleString()]].map(([a,b])=><article key={a}><span>{a}</span><b>{b??'—'}</b></article>)}</div></Page>
+}
 
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          {navItems.slice(1).map(([to, label]) => (
-            <Route key={to} path={to} element={<Placeholder title={label} />} />
-          ))}
-        </Routes>
-      </main>
-    </div>
-  );
+function Orders(){
+ const [rows,setRows]=useState([]),[customers,setCustomers]=useState([]),[locs,setLocs]=useState([]),[open,setOpen]=useState(false),[error,setError]=useState('');
+ async function load(){const [o,c,l]=await Promise.all([supabase.from('orders').select('*,customers(name),pickup:locations!orders_pickup_location_id_fkey(name),drop:locations!orders_drop_location_id_fkey(name)').order('created_at',{ascending:false}),supabase.from('customers').select('id,name').neq('status','inactive'),supabase.from('locations').select('id,name').eq('status','active')]);if(o.error)setError(o.error.message);setRows(o.data||[]);setCustomers(c.data||[]);setLocs(l.data||[])}
+ useEffect(()=>{load()},[]);
+ async function save(e){e.preventDefault();const f=new FormData(e.currentTarget);const p=Object.fromEntries(f.entries());p.order_no='ORD-'+Date.now().toString().slice(-8);p.status='new';p.quoted_amount=Number(p.quoted_amount||0);p.final_amount=Number(p.final_amount||0);const {error}=await supabase.from('orders').insert(p);if(error)setError(error.message);else{setOpen(false);load()}}
+ async function move(r){const n=nextOrder[r.status];if(!n)return;const {error}=await supabase.from('orders').update({status:n}).eq('id',r.id);if(error)setError(error.message);else load()}
+ return <Page title="Orders" action={<button className="primary" onClick={()=>setOpen(true)}>＋ New Order</button>}>{error&&<div className="error">{error}</div>}<div className="table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Route</th><th>Pickup</th><th>Status</th><th>Amount</th><th>Action</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td><b>{r.order_no}</b></td><td>{r.customers?.name||'—'}</td><td>{r.pickup?.name||'—'} → {r.drop?.name||'—'}</td><td>{fmt(r.pickup_at)}</td><td><span className="badge">{r.status}</span></td><td>NPR {Number(r.final_amount||r.quoted_amount||0).toLocaleString()}</td><td>{nextOrder[r.status]&&<button className="link" onClick={()=>move(r)}>Move → {nextOrder[r.status].replaceAll('_',' ')}</button>}</td></tr>)}</tbody></table></div>{open&&<Modal title="Create Order" onClose={()=>setOpen(false)}><form className="form-grid" onSubmit={save}><label>Customer<select name="customer_id" required><option value="">Select</option>{customers.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label>Pickup<select name="pickup_location_id"><option value="">Select</option>{locs.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label>Drop<select name="drop_location_id"><option value="">Select</option>{locs.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label>Pickup Date<input name="pickup_at" type="datetime-local"/></label><label>Quoted Amount<input name="quoted_amount" type="number"/></label><label>Final Amount<input name="final_amount" type="number"/></label><div className="actions"><button className="primary">Create</button></div></form></Modal>}</Page>
+}
+
+function Dispatch(){
+ const [eligible,setEligible]=useState([]),[rows,setRows]=useState([]),[vehicles,setVehicles]=useState([]),[drivers,setDrivers]=useState([]),[pick,setPick]=useState(null),[error,setError]=useState('');
+ async function load(){const [o,d,v,dr]=await Promise.all([supabase.from('orders').select('id,order_no,status,customers(name)').in('status',['quoted','assigned']),supabase.from('dispatches').select('*,orders(order_no),vehicles(registration_no),drivers(name)').order('created_at',{ascending:false}),supabase.from('vehicles').select('id,registration_no').eq('availability_status','available'),supabase.from('drivers').select('id,name').eq('status','active')]);setEligible(o.data||[]);setRows(d.data||[]);setVehicles(v.data||[]);setDrivers(dr.data||[])}
+ useEffect(()=>{load()},[]);
+ async function save(e){e.preventDefault();const f=new FormData(e.currentTarget);const vehicle_id=f.get('vehicle_id'),driver_id=f.get('driver_id');const {error}=await supabase.from('dispatches').insert({order_id:pick.id,vehicle_id,driver_id,status:'assigned'});if(error){setError(error.message);return}await Promise.all([supabase.from('orders').update({status:'assigned'}).eq('id',pick.id),supabase.from('vehicles').update({availability_status:'assigned'}).eq('id',vehicle_id)]);setPick(null);load()}
+ return <Page title="Dispatch">{error&&<div className="error">{error}</div>}<div className="cards">{eligible.map(o=><article key={o.id}><b>{o.order_no}</b><span>{o.customers?.name}</span><button className="primary small" onClick={()=>setPick(o)}>Assign</button></article>)}</div><div className="table-wrap"><table><thead><tr><th>Order</th><th>Vehicle</th><th>Driver</th><th>Status</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{r.orders?.order_no}</td><td>{r.vehicles?.registration_no}</td><td>{r.drivers?.name}</td><td><span className="badge">{r.status}</span></td></tr>)}</tbody></table></div>{pick&&<Modal title={'Dispatch '+pick.order_no} onClose={()=>setPick(null)}><form className="form-grid" onSubmit={save}><label>Vehicle<select name="vehicle_id" required><option value="">Select</option>{vehicles.map(x=><option key={x.id} value={x.id}>{x.registration_no}</option>)}</select></label><label>Driver<select name="driver_id" required><option value="">Select</option>{drivers.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><div className="actions"><button className="primary">Assign Dispatch</button></div></form></Modal>}</Page>
+}
+
+function Jobs(){
+ const [rows,setRows]=useState([]),[dispatches,setDispatches]=useState([]),[open,setOpen]=useState(false);
+ async function load(){const [j,d]=await Promise.all([supabase.from('jobs').select('*,orders(order_no)').order('created_at',{ascending:false}),supabase.from('dispatches').select('id,order_id,orders(order_no)').eq('status','assigned')]);setRows(j.data||[]);setDispatches(d.data||[])}
+ useEffect(()=>{load()},[]);
+ async function create(e){e.preventDefault();const id=new FormData(e.currentTarget).get('dispatch_id'),d=dispatches.find(x=>x.id===id);await supabase.from('jobs').insert({dispatch_id:id,order_id:d.order_id,status:'assigned'});setOpen(false);load()}
+ async function move(r){const n=nextJob[r.status];if(!n)return;const p={status:n};if(n==='work_started')p.started_at=new Date().toISOString();if(n==='completed')p.completed_at=new Date().toISOString();await supabase.from('jobs').update(p).eq('id',r.id);load()}
+ return <Page title="Jobs" action={<button className="primary" onClick={()=>setOpen(true)}>＋ Create Job</button>}><div className="table-wrap"><table><thead><tr><th>Order</th><th>Status</th><th>Started</th><th>Completed</th><th>Action</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{r.orders?.order_no}</td><td><span className="badge">{r.status}</span></td><td>{fmt(r.started_at)}</td><td>{fmt(r.completed_at)}</td><td>{nextJob[r.status]&&<button className="link" onClick={()=>move(r)}>Mark {nextJob[r.status].replaceAll('_',' ')}</button>}</td></tr>)}</tbody></table></div>{open&&<Modal title="Create Job" onClose={()=>setOpen(false)}><form className="form-grid" onSubmit={create}><label>Dispatch<select name="dispatch_id" required><option value="">Select</option>{dispatches.map(x=><option value={x.id} key={x.id}>{x.orders?.order_no}</option>)}</select></label><div className="actions"><button className="primary">Create</button></div></form></Modal>}</Page>
+}
+
+function Accounts(){
+ const [rows,setRows]=useState([]),[orders,setOrders]=useState([]),[type,setType]=useState('receive'),[open,setOpen]=useState(false);
+ async function load(){const [p,o]=await Promise.all([supabase.from('payments').select('*,orders(order_no)').order('paid_at',{ascending:false}),supabase.from('orders').select('id,order_no').neq('status','cancelled')]);setRows(p.data||[]);setOrders(o.data||[])}useEffect(()=>{load()},[]);
+ async function save(e){e.preventDefault();const p=Object.fromEntries(new FormData(e.currentTarget).entries());p.amount=Number(p.amount);p.payment_type=type;await supabase.from('payments').insert(p);setOpen(false);load()}
+ const total=t=>rows.filter(x=>x.payment_type===t).reduce((a,b)=>a+Number(b.amount||0),0);
+ return <Page title="Receive & Pay" action={<div className="head-actions"><button className="primary" onClick={()=>{setType('receive');setOpen(true)}}>Receive</button><button onClick={()=>{setType('pay');setOpen(true)}}>Pay</button><button onClick={()=>{setType('expense');setOpen(true)}}>Expense</button></div>}><div className="stats three">{['receive','pay','expense'].map(t=><article key={t}><span>{t}</span><b>NPR {total(t).toLocaleString()}</b></article>)}</div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Order</th><th>Mode</th><th>Amount</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{fmt(r.paid_at)}</td><td>{r.payment_type}</td><td>{r.orders?.order_no||'—'}</td><td>{r.payment_mode||'—'}</td><td>NPR {Number(r.amount).toLocaleString()}</td></tr>)}</tbody></table></div>{open&&<Modal title={type} onClose={()=>setOpen(false)}><form className="form-grid" onSubmit={save}><label>Order<select name="order_id"><option value="">None</option>{orders.map(x=><option key={x.id} value={x.id}>{x.order_no}</option>)}</select></label><label>Amount<input name="amount" type="number" required/></label><label>Mode<select name="payment_mode"><option>cash</option><option>bank</option><option>esewa</option><option>khalti</option><option>credit</option></select></label><label>Reference<input name="reference_no"/></label><div className="actions"><button className="primary">Save</button></div></form></Modal>}</Page>
+}
+
+function DayBook(){const [rows,setRows]=useState([]),[range,setRange]=useState('daily');useEffect(()=>{supabase.from('payments').select('*,orders(order_no)').order('paid_at',{ascending:false}).then(x=>setRows(x.data||[]))},[]);const shown=useMemo(()=>{const n=new Date();let s=new Date(0);if(range==='daily')s=new Date(n.getFullYear(),n.getMonth(),n.getDate());if(range==='weekly')s=new Date(n.getTime()-7*864e5);if(range==='monthly')s=new Date(n.getFullYear(),n.getMonth(),1);return rows.filter(x=>new Date(x.paid_at)>=s)},[rows,range]);return <Page title="Day Book"><div className="toolbar"><select value={range} onChange={e=>setRange(e.target.value)}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="all">All</option></select></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Order</th><th>Amount</th></tr></thead><tbody>{shown.map(r=><tr key={r.id}><td>{fmt(r.paid_at)}</td><td>{r.payment_type}</td><td>{r.orders?.order_no||'—'}</td><td>NPR {Number(r.amount).toLocaleString()}</td></tr>)}</tbody></table></div></Page>}
+
+function Slips(){
+ const [orders,setOrders]=useState([]);useEffect(()=>{supabase.from('orders').select('*,customers(name,phone),pickup:locations!orders_pickup_location_id_fkey(name),drop:locations!orders_drop_location_id_fkey(name)').then(x=>setOrders(x.data||[]))},[]);
+ async function make(o,type){const slip_no=type.toUpperCase()+'-'+Date.now().toString().slice(-8);await supabase.from('slips').upsert({order_id:o.id,slip_type:type,slip_no},{onConflict:'order_id,slip_type'});const w=window.open('','_blank');w.document.write(`<html><head><title>${slip_no}</title><style>body{font-family:Arial;padding:40px}.r{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eee}</style></head><body><h1>RikshaMS</h1><p>${type.toUpperCase()} SLIP · ${slip_no}</p><div class=r><b>Order</b><span>${o.order_no}</span></div><div class=r><b>Customer</b><span>${o.customers?.name||''}</span></div><div class=r><b>Phone</b><span>${o.customers?.phone||''}</span></div><div class=r><b>Route</b><span>${o.pickup?.name||''} → ${o.drop?.name||''}</span></div><div class=r><b>Amount</b><span>NPR ${Number(o.final_amount||o.quoted_amount||0).toLocaleString()}</span></div><br><button onclick=window.print()>Print</button></body></html>`);w.document.close()}
+ return <Page title="Slips"><div className="cards">{orders.map(o=><article key={o.id}><b>{o.order_no}</b><span>{o.customers?.name}</span><div className="head-actions"><button onClick={()=>make(o,'order')}>Order</button><button onClick={()=>make(o,'dispatch')}>Dispatch</button><button onClick={()=>make(o,'receipt')}>Receipt</button></div></article>)}</div></Page>
+}
+
+function PublicLead(){
+ const {slug}=useParams();const [agent,setAgent]=useState(null),[done,setDone]=useState(false),[error,setError]=useState('');
+ useEffect(()=>{if(slug)supabase.from('agents').select('id,code').eq('referral_slug',slug).maybeSingle().then(x=>setAgent(x.data))},[slug]);
+ async function save(e){e.preventDefault();const p=Object.fromEntries(new FormData(e.currentTarget).entries());p.source=agent?'agent':'public_link';p.agent_id=agent?.id||null;const {error}=await supabase.from('leads').insert(p);if(error)setError(error.message);else setDone(true)}
+ return <div className="auth-page"><form className="auth-card" onSubmit={save}><div className="logo">R</div><h1>{done?'Submitted':'Transport Request'}</h1>{done?<p>Thank you. Our team will contact you.</p>:<><p>{agent?'Agent referral':'Public lead form'}</p><label>Full Name<input name="full_name" required/></label><label>Phone<input name="phone" required/></label><label>Requirement<textarea name="requirement"/></label>{error&&<div className="error">{error}</div>}<button className="primary">Submit</button></>}</form></div>
+}
+
+function Shell({onLogout}){
+ const nav=[['/','Dashboard'],['/leads','Leads'],['/customers','Customers'],['/orders','Orders'],['/dispatch','Dispatch'],['/jobs','Jobs'],['/vehicles','Vehicles'],['/drivers','Drivers'],['/labour','Labour'],['/locations','Locations'],['/accounts','Receive & Pay'],['/day-book','Day Book'],['/slips','Slips'],['/notices','Notices']];
+ return <div className="shell"><aside><div className="brand"><div className="logo">R</div><div><b>RikshaMS</b><small>Transport + Labour</small></div></div><nav>{nav.map(([to,n])=><NavLink key={to} to={to} end={to==='/' }>{n}</NavLink>)}</nav><button className="logout" onClick={onLogout}>Logout</button></aside><main><header><b>RikshaMS</b><span>React + Supabase</span></header><Routes><Route index element={<Dashboard/>}/><Route path="leads" element={<Crud kind="leads"/>}/><Route path="customers" element={<Crud kind="customers"/>}/><Route path="orders" element={<Orders/>}/><Route path="dispatch" element={<Dispatch/>}/><Route path="jobs" element={<Jobs/>}/><Route path="vehicles" element={<Crud kind="vehicles"/>}/><Route path="drivers" element={<Crud kind="drivers"/>}/><Route path="labour" element={<Crud kind="labourers"/>}/><Route path="locations" element={<Crud kind="locations"/>}/><Route path="accounts" element={<Accounts/>}/><Route path="day-book" element={<DayBook/>}/><Route path="slips" element={<Slips/>}/><Route path="notices" element={<Crud kind="notices"/>}/></Routes></main></div>
+}
+
+export default function App(){
+ const [session,setSession]=useState(undefined);
+ useEffect(()=>{supabase.auth.getSession().then(({data})=>setSession(data.session));const {data}=supabase.auth.onAuthStateChange((_e,s)=>setSession(s));return()=>data.subscription.unsubscribe()},[]);
+ if(session===undefined)return <div className="loading">Loading RikshaMS…</div>;
+ return <Routes><Route path="/public/lead" element={<PublicLead/>}/><Route path="/r/:slug" element={<PublicLead/>}/><Route path="/*" element={session?<Shell onLogout={()=>supabase.auth.signOut()}/>:<Login onLogin={()=>{}}/>}/><Route path="*" element={<Navigate to="/" replace/>}/></Routes>
 }
