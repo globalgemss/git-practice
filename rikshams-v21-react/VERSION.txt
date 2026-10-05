@@ -1,0 +1,5 @@
+RikshaMS React + Supabase Final Migration
+Version: 22.1.0
+Visual/Workflow Master Reference: Google Apps Script V21
+Frontend: React + Vite
+Backend: Supabase PostgreSQL + Auth + RLS + Realtime + Edge Functions + Storage

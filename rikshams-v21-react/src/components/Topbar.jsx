@@ -1,0 +1,5 @@
+import React,{useState} from 'react'
+import {useNavigate} from 'react-router-dom'
+import {useAuth} from '../contexts/AuthContext'
+import {initials} from '../utils/format'
+export default function Topbar({onMenu}){const {profile,logout}=useAuth(),nav=useNavigate(),[q,setQ]=useState('');const submit=e=>{e.preventDefault();if(q.trim())nav(`/search?q=${encodeURIComponent(q.trim())}`)};return <header className="topbar"><button className="hamb" onClick={onMenu}>☰</button><form className="global-search" onSubmit={submit}>⌕ <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search lead, order, customer, vehicle, labour..."/></form><div className="top-actions"><button className="notif" title="Notifications">●</button><div className="avatar">{initials(profile?.display_name||'Admin')}</div><div className="profile"><b>{profile?.display_name||'Administrator'}</b><span>{profile?.role||'Admin'}</span></div><button className="logout-btn" onClick={logout}>Logout</button></div></header>}

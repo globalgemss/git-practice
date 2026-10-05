@@ -1,0 +1,2 @@
+import React from 'react'
+export default function SearchFilterBar({search,onSearch,children,view,onView,placeholder='Search…'}){return <div className="filterbar universal-toolbar"><label className="searchbox">⌕<input value={search||''} onChange={e=>onSearch?.(e.target.value)} placeholder={placeholder}/></label>{children}{onView&&<div className="toggle-view"><button className={view==='table'?'active':''} onClick={()=>onView('table')}>▤</button><button className={view==='card'?'active':''} onClick={()=>onView('card')}>▦</button></div>}</div>}

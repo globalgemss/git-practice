@@ -1,0 +1,3 @@
+import React from 'react'
+import { formatDateTime } from '../utils/format'
+export default function Timeline({items=[]}){return <div className="timeline-list">{items.length?items.map((x,i)=><div className="timeline-item" key={x.id||i}><span className="timeline-dot"></span><div className="timeline-card"><div className="timeline-meta"><b>{x.stage||x.event_type||x.category||'Event'}</b><span>{formatDateTime(x.created_at||x.at)}</span></div><p>{x.note||x.text||x.label||''}</p></div></div>):<div className="profile-empty">No timeline events yet.</div>}</div>}

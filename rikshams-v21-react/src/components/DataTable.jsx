@@ -1,0 +1,3 @@
+import React from 'react'
+import EmptyState from './EmptyState'
+export default function DataTable({columns,rows,keyField='id',onRow,empty='No records'}){if(!rows?.length)return <EmptyState title={empty}/>;return <div className="table-wrap"><table><thead><tr>{columns.map(c=><th key={c.key}>{c.label}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={r[keyField]||i} onClick={()=>onRow?.(r)} className={onRow?'clickable-row':''}>{columns.map(c=><td key={c.key}>{c.render?c.render(r,i):r[c.key]}</td>)}</tr>)}</tbody></table></div>}

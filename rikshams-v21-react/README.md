@@ -1,105 +1,72 @@
-# RikshaMS V21 React + Supabase
+# RikshaMS — React + Supabase Final Migration
 
-A separate V21 migration project based on the uploaded **RikshaMS Full V21 Advanced Notice Center** Index + Code.gs.
+RikshaMS is the migrated production web application for Transport + Labour Management.
 
-## Stack
-React 19 + Vite + React Router + Supabase PostgreSQL/Auth/RLS + QR + Vercel.
+## Architecture
 
-## Implemented in this project
-- V21 menu/layout/theme baseline
-- Supabase Auth login
-- Dashboard with real counts
-- Leads CRUD with search/filter/sort/card-table
-- New Order
-- Orders stage workflow
-- Dispatch queue + vehicle/driver/labour assignment
-- Fleet & Crew: vehicles, drivers, labour, owners, partners
-- Customers
-- Slips: Order / Dispatch / Receipt generation
-- Receive & Pay
-- Day Book
-- Accounts & Reports
-- Direct Public Form
-- User / Agent Access + login QR generation
-- Notice Center CRUD
-- Admin Settings
-- Nepal timezone display
-- PostgreSQL schema mirroring V21 fields
-- RLS policies
-- public/agent form data model
-- profile notes + audit tables
+- Frontend: React 18 + Vite + React Router
+- Backend: Supabase PostgreSQL
+- Auth: Supabase Auth + RLS
+- Realtime: Leads, Orders, Dispatch, Notices, Transactions, Fleet availability
+- Secure server actions: Supabase Edge Functions
+- Files: private Supabase Storage bucket `rikshams-documents`
+- Deployment: Vercel
+- Business timezone: Asia/Kathmandu
 
-## Setup
-1. Create a Supabase project.
-2. Run SQL files in order:
-   - `supabase/migrations/001_schema.sql`
-   - `supabase/migrations/002_security.sql`
-   - `supabase/migrations/003_seed.sql`
-3. In Supabase Auth create the first admin user. Use a 4-digit PIN as its password if you want the old V21 PIN-style login experience.
-4. Create the matching profile:
+The original Google Apps Script V21 application is included in `reference/` and remains the visual/workflow master reference.
 
-```sql
-insert into public.profiles(auth_user_id,profile_type,profile_id,display_name,role,active,permissions)
-select id,'Admin','ADMIN','Administrator','Admin',true,'["*"]'::jsonb
-from auth.users where email='YOUR_ADMIN_EMAIL';
-```
+## Local setup
 
-5. Copy `.env.example` to `.env` and add your Supabase project URL and anon key.
-6. Run:
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev
-npm run build
 ```
 
-## Public form
-Seed token: `DIRECT`
-URL after deployment: `/public/DIRECT`
+Set:
 
-## Vercel
-Set Root Directory to `rikshams-v21-react`, add the two Vite environment variables, then deploy.
-
-## Current verification status
-The project structure and migration logic are based directly on the uploaded V21 source. Live end-to-end testing still requires your Supabase URL/anon key and a Supabase project with the migrations applied.
-
-
-## Edge Function deployment
-Deploy the secure access function before creating Agent/Staff PIN accounts:
-
-```bash
-supabase functions deploy manage-access
-```
-
-Supabase automatically provides `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` to deployed Edge Functions. Never put the service-role key in the React frontend.
-
-The **User / Agent Access** screen then creates/updates the Supabase Auth user securely, stores the profile, generates the login token, and creates an Agent public form when the role is Agent.
-
-Agent login URL:
-`/agent-login/:loginToken`
-
-
-
-## Live production connection
-
-Supabase project: `RikshaMS`
-Project ref: `hgbxdurimxcofvgujwux`
-Region: `ap-south-1`
-
-The React client has a live publishable-key fallback and can also be overridden with:
 ```env
-VITE_SUPABASE_URL=
-VITE_SUPABASE_PUBLISHABLE_KEY=
+VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
 ```
 
-Production database migrations currently applied:
-- rikshams_v21_schema
-- rikshams_v21_security
-- rikshams_v21_seed
-- rikshams_v21_security_hardening
-- rikshams_v21_realtime_audit_and_public_form
+Never put a Supabase service-role/secret key in Vite/browser environment variables.
 
-Security status: Supabase database/RLS advisor is clean except the optional leaked-password-protection warning on the Free plan.
+## Main modules
 
-Authentication:
-- Admin uses normal Supabase email/password login.
-- Agent/Staff access keeps the V21 4-digit PIN UI; the Edge Function maps it to a Supabase-compatible credential.
+Dashboard, Leads & Enquiries, New Order, Orders, Dispatch, Fleet & Crew, Vehicles, Drivers, Labour, Vehicle Owners, Partners, Rate Master, Customers, Slips, Receive & Pay, Day Book, Accounts & Reports, Direct Public Form, User / Agent Access, Advanced Notice Center, Profiles, Notes/Timeline, Audit History and Admin Settings.
+
+## Important workflow rules
+
+Lead lifecycle: `New Enquiry → Quoted → Confirmed → Converted`. Follow-up is an activity/history item, not a required lifecycle stage.
+
+Order lifecycle: `New → Assigned → Dispatched → In Transit → Delivered → Completed`, with `Cancelled` supported. Assignment and stage changes use database RPCs so vehicle/driver/labour availability and timeline changes remain atomic.
+
+## Public and agent routes
+
+- Direct/agent public form: `/public/:token`
+- Agent PIN login: `/agent-login/:token`
+- Agent workspace: `/agent`
+
+Agent PIN validation is performed server-side with hashed PIN storage, failed-attempt tracking and 15-minute lockout after repeated failures.
+
+## Supabase
+
+Migrations are in `supabase/migrations/`.
+Edge Functions are in `supabase/functions/`.
+
+Applied production migrations include core schema, RLS/security, Realtime/audit, vehicle types, dispatch normalization, private storage, role hardening, numeric data normalization with migration issue logging and public-form lockdown.
+
+## Deployment
+
+1. Push this folder to GitHub.
+2. Import repository into Vercel.
+3. Add the two `VITE_SUPABASE_*` environment variables.
+4. Deploy.
+5. Add custom domain when ready.
+
+`vercel.json` includes SPA rewrites so React Router deep links work.
+
+## Security note
+
+Supabase Security Advisor may still report the two intentional authenticated `SECURITY DEFINER` operational RPCs. They explicitly validate the caller role before performing atomic workflow changes. Enable **Leaked Password Protection** in Supabase Auth settings before public production launch.

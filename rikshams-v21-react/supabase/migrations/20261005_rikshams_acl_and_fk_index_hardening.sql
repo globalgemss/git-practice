@@ -1,0 +1,30 @@
+revoke execute on function public.assign_dispatch_resources(text,text,text,text[],numeric,numeric) from anon;
+revoke execute on function public.transition_order_status(text,text,text,boolean) from anon;
+revoke execute on function public.next_business_id(text) from anon;
+grant execute on function public.assign_dispatch_resources(text,text,text,text[],numeric,numeric) to authenticated;
+grant execute on function public.transition_order_status(text,text,text,boolean) to authenticated;
+grant execute on function public.next_business_id(text) to authenticated, service_role;
+
+drop policy if exists deny_agent_credentials_browser on public.agent_credentials;
+create policy deny_agent_credentials_browser on public.agent_credentials for all to anon,authenticated using(false) with check(false);
+drop policy if exists deny_public_form_limits_browser on public.public_form_rate_limits;
+create policy deny_public_form_limits_browser on public.public_form_rate_limits for all to anon,authenticated using(false) with check(false);
+
+create index if not exists idx_dispatches_vehicle on public.dispatches(vehicle_id);
+create index if not exists idx_dispatches_driver on public.dispatches(driver_id);
+create index if not exists idx_dispatches_partner on public.dispatches(partner_id);
+create index if not exists idx_dispatches_created_by on public.dispatches(created_by);
+create index if not exists idx_order_labour_dispatch on public.order_labour_assignments(dispatch_id);
+create index if not exists idx_order_labour_created_by on public.order_labour_assignments(created_by);
+create index if not exists idx_order_events_actor on public.order_events(actor_profile_id);
+create index if not exists idx_lead_quotes_created_by on public.lead_quotes(created_by);
+create index if not exists idx_lead_followups_created_by on public.lead_followups(created_by);
+create index if not exists idx_lead_events_actor on public.lead_events(actor_profile_id);
+create index if not exists idx_notice_reads_profile on public.notice_reads(profile_id);
+create index if not exists idx_app_settings_updated_by on public.app_settings(updated_by);
+create index if not exists idx_attachments_uploaded_by on public.attachments(uploaded_by);
+create index if not exists idx_orders_assigned_by on public.orders(assigned_by);
+create index if not exists idx_orders_vehicle_type on public.orders(vehicle_type_id);
+create index if not exists idx_rates_vehicle_type_id on public.rates(vehicle_type_id);
+create index if not exists idx_vehicles_partner on public.vehicles(partner_id);
+create index if not exists idx_vehicles_vehicle_type on public.vehicles(vehicle_type_id);

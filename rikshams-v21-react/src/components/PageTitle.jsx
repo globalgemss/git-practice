@@ -1,0 +1,2 @@
+import React from 'react'
+export default function PageTitle({title,subtitle,actions}){return <div className="page-title"><div><h1>{title}</h1>{subtitle&&<p>{subtitle}</p>}</div><div className="page-actions">{actions}</div></div>}
