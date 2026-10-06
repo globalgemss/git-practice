@@ -1,3 +1,5 @@
 import React from 'react'
-import { slug } from '../utils/format'
-export default function StatusBadge({children,status}){const s=status||children||'Unknown';return <span className={`badge ${slug(s)}`}>{s}</span>}
+function slug(v=''){return String(v).toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'')}
+export default function StatusBadge({status='—',className=''}){
+  return <span className={`badge ${slug(status)} ${className}`.trim()}>{status}</span>
+}

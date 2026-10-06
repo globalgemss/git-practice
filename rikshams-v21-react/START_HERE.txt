@@ -1,0 +1,6 @@
+RikshaMS V26.1.12 Modern Modal & Form System Final
+1. npm install
+2. npm run dev
+3. Test forms/modals on desktop, tablet and phone widths.
+4. npm run build before deployment.
+No new Supabase SQL is required for V26.1.12.

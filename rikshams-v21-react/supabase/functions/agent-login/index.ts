@@ -12,11 +12,13 @@ Deno.serve(async(req:Request)=>{
   const url=Deno.env.get("SUPABASE_URL")??"", publishable=envKey("SUPABASE_PUBLISHABLE_KEYS","SUPABASE_ANON_KEY"), secret=envKey("SUPABASE_SECRET_KEYS","SUPABASE_SERVICE_ROLE_KEY");
   const admin=createClient(url,secret,{auth:{persistSession:false,autoRefreshToken:false}});
   const body=await req.json(), token=String(body.token||"").trim().toUpperCase(), pin=String(body.pin||"").replace(/\D/g,"");
-  if(!token||!/^\d{4}$/.test(pin))throw new Error("Invalid token or PIN");
-  const {data:profile,error:pErr}=await admin.from("profiles").select("id,auth_user_id,profile_id,display_name,mobile,role,profile_type,login_token,active,permissions").eq("login_token",token).eq("role","Agent").maybeSingle();
-  if(pErr)throw pErr;if(!profile?.active)throw new Error("Agent access is disabled");
+  if(!token)throw new Error("Invalid portal token");
+  const {data:profile,error:pErr}=await admin.from("profiles").select("id,auth_user_id,profile_id,display_name,mobile,role,profile_type,login_token,active,permissions,linked_entity_type,linked_entity_id").eq("login_token",token).eq("role","Agent").maybeSingle();
+  if(pErr)throw pErr;if(!profile?.active)throw new Error("Portal access is disabled");
+  if(String(body.action||"")==="identify")return json({success:true,profile:{display_name:profile.display_name,profile_type:profile.profile_type,profile_id:profile.profile_id}});
+  if(!/^\d{4}$/.test(pin))throw new Error("Invalid PIN");
   const {data:cred,error:cErr}=await admin.from("agent_credentials").select("pin_hash,failed_attempts,locked_until").eq("profile_id",profile.id).maybeSingle();
-  if(cErr)throw cErr;if(!cred)throw new Error("Agent PIN is not configured");
+  if(cErr)throw cErr;if(!cred)throw new Error("Portal PIN is not configured");
   if(cred.locked_until&&new Date(cred.locked_until).getTime()>Date.now())throw new Error("Too many failed attempts. Try again later.");
   const ok=await bcrypt.compare(pin,cred.pin_hash);
   if(!ok){const attempts=Number(cred.failed_attempts||0)+1;const locked=attempts>=5?new Date(Date.now()+15*60*1000).toISOString():null;await admin.from("agent_credentials").update({failed_attempts:attempts,locked_until:locked,last_failed_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq("profile_id",profile.id);throw new Error(locked?"Too many failed attempts. Locked for 15 minutes.":"Invalid PIN");}
@@ -25,7 +27,7 @@ Deno.serve(async(req:Request)=>{
   const email=token.toLowerCase()+"@rikshams.local";
   const {data:authData,error:authErr}=await userClient.auth.signInWithPassword({email,password:authPassword(token,pin)});
   if(authErr||!authData.session)throw authErr||new Error("Unable to create session");
-  await admin.from("profiles").update({last_login_at:new Date().toISOString()}).eq("id",profile.id);
+  await admin.from("profiles").update({last_login_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq("id",profile.id);
   return json({success:true,session:authData.session,profile});
  }catch(e){return json({success:false,message:e instanceof Error?e.message:String(e)},400)}
 });

@@ -1,0 +1,15 @@
+RikshaMS V25 Edge Function Deployment
+======================================
+Project ref: hgbxdurimxcofvgujwux
+
+After installing/login to Supabase CLI:
+
+supabase login
+supabase link --project-ref hgbxdurimxcofvgujwux
+supabase functions deploy manage-access
+supabase functions deploy agent-login --no-verify-jwt
+supabase functions deploy public-form-config --no-verify-jwt
+supabase functions deploy public-lead-submit --no-verify-jwt
+
+Why --no-verify-jwt for agent-login and the two public-form functions?
+They are pre-auth/public endpoints (agent PIN login plus public enquiry endpoints). Their code validates the public form token, limits submissions and performs server-side database work. manage-access and agent-login keep their protected/custom-auth behavior.
